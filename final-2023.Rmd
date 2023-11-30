@@ -1,0 +1,176 @@
+---
+title: "Final Fundamentos 2023"
+output: html_document
+---
+
+Un reporte con las respuestas se deberá enviar por correo electrónico a más 
+tardar el martes 5 a las 21:00 horas.
+
+Instrucciones: 
+
+- En las siguientes preguntas describe tus procedimientos y escribe las
+respuestas explícitamente (que no haya necesidad de correr código para 
+obtenerlas). 
+
+- Incluye el código.
+
+- No está permitido discutir el exámen fuera de su equipo.
+
+- Para dudas (que no deben incluir info. de la respuesta) se preguntará en el 
+canvas del grupo.
+
+- Consideren el material de visualización al hacer sus gráficas y reportar sus
+resultados.
+
+## 1. Pruebas de hipótesis
+
+1.1 De acuerdo a una encuesta en EUA, 26% de los residentes adultos de Illinois han 
+terminado la preparatoria. Un investigador sospecha que este porcentaje es
+menor en un condado particular del estado. Obtiene una muestra aleatoria de 
+dicho condado y encuentra que 69 de 310 personas en la muestra han completado
+la preparatoria. Estos resultados soportan su hipótesis? (describe tu elección de
+prueba de hipótesis, valor p y conclusión).
+
+
+
+1.2 Mendel criaba chícharos de semillas lisas amarillas y de semillas
+corrugadas verdes. Éstas daban lugar a 4 tipos de descendientes: amarrillas lisas, amarillas corrugadas, verdes lisas y verdes corrugadas. El número de cada una
+es multinomial con parámetro $p=(p_1, p_2, p_3, p_4)$. De acuerdo a su teoría de
+herencia este vector de probabilidades es:
+$$p=(9/16,3/16,3/16,1/16)$$
+A lo largo de $n=556$ experimentos observó $x=(315,101,108,32)$. Utiliza la prueba
+de cociente de verosimilitudes para probar $H_0:p=p_0$ contra $H_0:p\ne p_0$.
+
+
+
+1.3. Sean $X_1, ...X_n \sim Poisson(\lambda)$,
+
+* Sea $\lambda_0>0$. ¿Cuál es la prueba Wald para
+$H_0: \lambda = \lambda_0, H_1: \lambda \neq \lambda_0$
+
+* Si $\lambda_0=1$, $n=20$ y $\alpha = 0.05$. Simula  $X_1, ...X_n \sim Poisson(\lambda_0)$ y realiza la prueba Wald, repite 1000 veces y registra
+el porcentaje de veces que rechazas $H_0$, qué tan cerca te queda el
+error del tipo 1 de $0.05$?
+
+
+
+
+## 2. Relación entre bootstrap e inferencia bayesiana
+
+Consideremos el caso en que tenemos una única observación $x$ proveniente de 
+una distribución normal
+
+$$x \sim N(\theta, 1)$$
+
+Supongamos ahora que elegimos una distribución inicial Normal.
+
+$$\theta \sim N(0, \tau)$$ 
+
+dando lugar a la distribución posterior (como vimos en la tarea)
+
+$$\theta|x \sim N\bigg(\frac{x}{1 + 1/\tau}, \frac{1}{1+1/\tau}\bigg)$$ 
+
+Ahora, entre mayor $\tau$, más se concentra la posterior en el estimador de
+máxima verosimilitud $\hat{\theta}=x$. En el límite, cuando $\tau \to \infty$
+obtenemos una inicial no-informativa (constante) y la distribución posterior
+
+$$\theta|x \sim N(x,1)$$
+
+Esta posterior coincide con la distribución de bootstrap paramétrico en que generamos valores $x^*$ de $N(x,1)$, donde $x$ es el estimador de máxima
+verosimilitud.
+
+Lo anterior se cumple debido a que utilizamos un ejemplo Normal pero también 
+se cumple aproximadamente en otros casos, lo que conlleva a una correspondencia
+entre el bootstrap paramétrico y la inferencia bayesiana. En este caso, la
+distribución bootstrap representa (aproximadamente) una distribución posterior 
+no-informartiva del parámetro de interés. Mediante la perturbación en los datos
+el bootstrap aproxima el efecto bayesiano de perturbar los parámetros con la
+ventaja de ser más simple de implementar (en muchos casos).  
+*Los detalles se pueden leer en _The Elements of Statistical Learning_ de 
+Hastie y Tibshirani.
+
+Comparemos los métodos en otro problema con el fin de apreciar la similitud en 
+los procedimientos: 
+
+Supongamos $x_1,...,x_n \sim N(0, \sigma^2)$, es decir, los datos provienen de 
+una distribución con media cero y varianza desconocida.
+
+En los puntos 2.1 y 2.2 buscamos hacer inferencia del parámetro $\sigma^2$.
+
+2.1 Bootstrap paramétrico.
+
+* Escribe la función de log-verosimilitud y calcula el estimador de máxima 
+verosimilitud para $\sigma^2$.  Supongamos que observamos los datos 
+`x` (en la carpeta datos), ¿Cuál es tu estimación de la varianza?
+
+* Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y 
+realiza un histograma de las replicaciones bootstrap.
+
+2.2 Análisis bayesiano
+
+* Continuamos con el problema de hacer inferencia de $\sigma^2$. Comienza 
+especificando una inicial Gamma Inversa, justifica tu elección de los parámetros 
+de la distribución inicial y grafica la función de densidad.
+
+* Calcula analíticamente la distribución posterior.
+
+* Realiza un histograma de simulaciones de la distribución posterior y calcula
+el error estándar de la distribución.
+
+* ¿Cómo se comparan tus resultados con los de bootstrap paramétrico?
+
+2.3 Supongamos que ahora buscamos hacer inferencia del parámetro 
+$\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+
+* Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95%
+para el parámetro $\tau$ y realiza un histograma de las replicaciones 
+bootstrap.
+
+* Ahora volvamos a inferencia bayesiana, calcula  un intervalo de confianza para $\tau$ y un histograma de la distribución posterior de $\tau$.
+
+### 3. Bayesiana y regularización
+
+Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de 
+ecnuestas realizadas durante la campaña presidencial 2008 de EUA.
+
+```{r}
+poll_data <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
+```
+
+* Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
+y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
+verosimilitud.
+  - Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
+  la estimación de máxima verosimilitud para *very liberal*. ¿Qué observas?  
+  - Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
+  para cada estado y en el eje *y* la estimación de máxima verosimilitud para *very liberal*. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+
+* Estima el mismo porcentaje (*very liberal*) usando inferencia bayesiana, en particular
+la familia conjugada beta-binomial. Deberás estimar la proporción de manera 
+independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
+largo de todos: $Beta(8,160)$.
+
+  - Simula de la distribución incial y describe.
+  
+  - Para dos de los estados: Idaho y Virginia, adicional a calcular la posterior
+  usando las propiedades de la familia conjugada, utiliza Stan para hacer la inferencia, 
+  revisa los diagnósticos de convergencia y describe tus observaciones ($\hat{R}$ y $ESS$).
+
+  - Utiliza la media posterior de cada estado como estimador puntual y repite las
+  gráficas del inciso anterior.
+
+
+**Nota:** En problemas como este, donde estamos estimando un parámetro para cada 
+grupo (estado e nuestro caso) podemos optar por un modelo jerárquico, en 
+donde la distribución de las $\theta_j$ no esta dada por la incial 
+sino que se modela con un nivel adicional, cuyos parámetros se estiman con los datos
+y tienen a su vez una distribución incial:
+
+
+$$y_j|\theta_j \sim Binomial(n_j, \theta_j)$$
+
+$$\theta_j \sim Beta(\alpha, \beta) $$
+
+$$\alpha \sim g(a_o), \beta \sim f(b_0)$$
+
+donde $g(a_0)$ y $f(b_0)$ son las inciales seleccionadas con conocimiento experto.
