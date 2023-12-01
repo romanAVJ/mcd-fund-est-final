@@ -23,6 +23,9 @@ canvas del grupo.
 resultados.
 ```{r}
 library(tidyverse)
+library(dplyr)
+install.packages("tibble")
+library(tibble)
 
 ```
 
@@ -227,29 +230,157 @@ En los puntos 2.1 y 2.2 buscamos hacer inferencia del parámetro $\sigma^2$.
 * Escribe la función de log-verosimilitud y calcula el estimador de máxima 
 verosimilitud para $\sigma^2$.  Supongamos que observamos los datos 
 `x` (en la carpeta datos), ¿Cuál es tu estimación de la varianza?
+```{r}
+
+## Log-verosimilitud para una distribución normal con media mu y desviación estándar sigma
+# log L(mu, sigma) = sum(desde i=1 hasta n) log(1/(sqrt(2*pi*sigma^2)) * exp(-((x_i - mu)^2)/(2*sigma)))
+
+# Esto se simplifica a:
+# log L(mu, sigma) = sum(desde i=1 hasta n) (log(1/sqrt(2*pi)) + (1/2)*log(1/sigma^2) - (-(x_i - mu)^2)/(2*sigma^2))
+
+# La derivada de la log-verosimilitud con respecto a sigma^2 es:
+# d(log L)/d(sigma^2) = 0 = (1/n) * sum(desde i=1 hasta n) ((x_i - mu)^2)
+
+# Dado que mu = 0, podemos simplificar la derivada a:
+# d(log L)/d(sigma^2) = (1/n) * sum(desde i=1 hasta n) x_i^2
+
+## MLE para sigma**2 = (1/n) * sum(desde i=1 hasta n) x_i**2
+```
+
+```{r}
+load("~/Github/mcd-fund-est-final/data/x.RData")
+
+muestra <-x  
+
+crear_log_p_2 <- function(x){
+  log_p <- function(pars){
+    mean = pars[1]
+    desv_est = pars[2]
+
+    z <- (x - 0) / desv_est
+    log_verosim <- -(log(desv_est) +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+
+log_p <- crear_log_p_2(muestra)
+
+ # Optimizamos y vemos si hace convergencia 
+res <- optim(c(0, 0.5), log_p, control = list(fnscale = -1, maxit = 1000), method = "Nelder-Mead")
+res$convergence
+
+# Calculamos el estimador de máxima verosimilitud
+est_mle <- tibble(parametro = c("Sigma^2"), Estimador = res$par[2]^2) %>% 
+  column_to_rownames(  var = "parametro")
+est_mle
+
+sigma_est=mean(muestra^2)
+sigma_est
+```
 
 * Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y 
 realiza un histograma de las replicaciones bootstrap.
+
+```{r}
+simular_modelo <- function(n, sigma){
+  rnorm(n, 0, sqrt(sigma))
+}
+muestra_bootstrap <- simular_modelo(length(muestra), est_mle["Sigma^2", "Estimador"])
+
+head(muestra_bootstrap)
+
+log_p_boot <- crear_log_p_2(muestra_bootstrap)
+res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 3000), method = "Nelder-Mead")
+res_boot$convergence
+
+est_mle_boot <- tibble(parametro = c("Sigma^2"), Estimador = res_boot$par[2]^2) %>% 
+  column_to_rownames(  var = "parametro")
+est_mle_boot
+
+rep_boot <- function(rep, crear_log_p_2, est_mle, n){
+  muestra_bootstrap <- simular_modelo(length(muestra), est_mle["Sigma^2", "Estimador"])
+  log_p_boot <- crear_log_p_2(muestra_bootstrap)
+  # optimizamos
+  res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 5000), method = "Nelder-Mead")
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c( "Sigma^2"), estimador_boot = res_boot$par[2]^2) 
+}
+reps_boot <- map_dfr(1:5000, ~ rep_boot(.x, crear_log_p_2, est_mle, n = length(muestra)), rep = ".id") 
+reps_boot
+
+error_est <- reps_boot %>% group_by(parametro) %>% 
+  summarise(ee_boot = sd(estimador_boot)) 
+
+error_est
+
+ggplot(reps_boot, aes(x = estimador_boot)) +
+  geom_histogram(title = "Replicaciones Bootstrap",color="darkblue", fill="lightblue") +facet_wrap(~parametro)
+```
 
 2.2 Análisis bayesiano
 
 * Continuamos con el problema de hacer inferencia de $\sigma^2$. Comienza 
 especificando una inicial Gamma Inversa, justifica tu elección de los parámetros 
 de la distribución inicial y grafica la función de densidad.
+```{r}
+# La media de una distribución Gamma Inversa es beta/alpha-1 y la varianza es beta^2/(alpha-1)^2-(alpha-2)
+
+# De lo anterior tenemos que sigma^2 = beta^2/(alpha-1)^2-(alpha-2) definida solo para alpha > 2, no podemos elegir beta = 0 porque está indefinido. 
+
+# Elegimos beta = 2 y alpha = 2 
+
+```
 
 * Calcula analíticamente la distribución posterior.
+```{r}
+# P(θ|X)∝P(X|θ)P(θ)
+
+# Tenemos que f(σ2|x1,...,xn) = GammaI(α+n/2 , β+1/2∑(xi−μ)^2)
+
+
+```
 
 * Realiza un histograma de simulaciones de la distribución posterior y calcula
 el error estándar de la distribución.
+```{r}
+Inverse_gamma <- function(m, n){
+  alpha <- n/2 + 2
+  beta <- 2+ 0.5*(sum(x^2))  
+  gamma <- rgamma(1000, shape = alpha, rate = beta)
+  gamma_inversa <- 1 / gamma  
+  tibble(parametro = c("sigma^2"), estimador_posterior = gamma_inversa)
+}
+
+simulaciones <- map_dfr(1:5000, ~ Inverse_gamma(.x, n = length(muestra)), m = ".id")
+
+ggplot(simulaciones, aes(x = estimador_posterior)) + geom_histogram(color="darkblue", fill="lightblue")
+```
 
 * ¿Cómo se comparan tus resultados con los de bootstrap paramétrico?
+```{r}
+est_mle_boot
+
+mean(simulaciones$estimador_posterior)
+
+# por lo que son cercanas a nuestro estimador inicial mas que en el caso de bootstrap parametrico, esto puede ser por la seleccion de variables posteriores y la forma analitica en que se consideraron.
+```
 
 2.3 Supongamos que ahora buscamos hacer inferencia del parámetro 
 $\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+```{r}
+# Tenemos que el estimador MLE de sigma**2 es (1/n) * sum(desde i=1 hasta n) x_i**2 y que tau = log(sigma), es decir tau = log(sqrt((1/n) * sum(desde i=1 hasta n) x_i**2))
+
+
+```
 
 * Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95%
 para el parámetro $\tau$ y realiza un histograma de las replicaciones 
 bootstrap.
+```{r}
+
+
+```
 
 * Ahora volvamos a inferencia bayesiana, calcula  un intervalo de confianza para $\tau$ y un histograma de la distribución posterior de $\tau$.
 
