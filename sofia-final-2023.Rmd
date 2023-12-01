@@ -24,7 +24,6 @@ resultados.
 ```{r}
 library(tidyverse)
 library(dplyr)
-install.packages("tibble")
 library(tibble)
 
 ```
@@ -378,11 +377,71 @@ $\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
 para el parámetro $\tau$ y realiza un histograma de las replicaciones 
 bootstrap.
 ```{r}
+crear_log_p_3 <- function(x){
+  log_p <- function(pars){
+    tau <- log((sqrt((1/length(x))*sum(x^2))))
+    tau
+  }  
+  log_p
+}
 
+log_p_3 <- crear_log_p_3(muestra)
+
+res_3 <- optim(c(0, 0.5), log_p_3, control = list(fnscale = -1, maxit = 1000), method = "Nelder-Mead")
+res_3$convergence
+
+est_mle_3 <- tibble(parametro = c("tau"), Estimador = res_3$value) %>% 
+  column_to_rownames(  var = "parametro")
+est_mle_3
+
+muestra_bootstrap <- simular_modelo(length(muestra), est_mle_3["tau", "Estimador"])
+
+head(muestra_bootstrap)
+
+log_p_boot <- crear_log_p_3(muestra_bootstrap)
+res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 3000), method = "Nelder-Mead")
+res_boot$convergence
+
+est_mle_boot <- tibble(parametro = c("tau"), Estimador = res_boot$value) %>% 
+  column_to_rownames(  var = "parametro")
+
+
+rep_boot <- function(rep, crear_log_p_3, est_mle_3, n){
+  muestra_bootstrap <- simular_modelo(length(muestra), est_mle_3["tau", "Estimador"])
+  log_p_boot <- crear_log_p_3(muestra_bootstrap)
+  # optimizamos
+  res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 5000), method = "Nelder-Mead")
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c( "tau"), estimador_boot = res_boot$value) 
+}
+reps_boot <- map_dfr(1:5000, ~ rep_boot(.x, crear_log_p_3, est_mle_3, n = length(muestra)), rep = ".id") 
+mean(reps_boot$estimador_boot)
+
+quantile(reps_boot$estimador_boot, c(0.05, 0.95))
+
+ggplot(reps_boot, aes(x = estimador_boot)) +
+  geom_histogram(title = "Replicaciones Bootstrap",color="darkblue", fill="lightblue") +facet_wrap(~parametro)
 
 ```
 
 * Ahora volvamos a inferencia bayesiana, calcula  un intervalo de confianza para $\tau$ y un histograma de la distribución posterior de $\tau$.
+```{r}
+Inverse_gamma_2 <- function(m, n){
+  alpha <- n/2 + 2
+  beta <- 2+ 0.5*(sum(x^2))  
+  gamma <- sqrt(rgamma(1000, shape = alpha, rate = beta))
+  gamma_inversa <- gamma
+  tibble(parametro = c("tau"), estimador_posterior = gamma_inversa)
+}
+
+simulaciones_2 <- map_dfr(1:5000, ~ Inverse_gamma_2(.x, n = length(muestra)), m = ".id")
+
+graf <- ggplot(simulaciones_2, aes(x = estimador_posterior)) + geom_histogram(color="darkblue", fill="lightblue")
+
+graf
+
+quantile(simulaciones_2$estimador_posterior, c(0.05, 0.95))
+```
 
 ### 3. Bayesiana y regularización
 
@@ -391,15 +450,90 @@ ecnuestas realizadas durante la campaña presidencial 2008 de EUA.
 
 ```{r}
 poll_data <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
+
 ```
 
 * Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
 y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
 verosimilitud.
+
+```{r}
+data <- poll_data %>%
+  #Eliminamos los estados que no nos interesan
+  filter(!state %in% c('alaska', 'hawaii','washington dc')) %>%
+  #Filtramos los datos de la ideología para clasificarlos más fácilmente
+  mutate(x = if_else(ideo == 'very liberal', 1, 0, 0)) %>%
+  group_by(state) %>%
+  #Obtenemos los datos de cada estado
+  summarise(very_liberal = sum(x), n = n(), p = very_liberal/n, .groups="drop") %>%
+  #Ordenamos los estados con mayor proporción
+  arrange(desc(p))
+head(data)
+
+#Podemos observar que los estados que se consideran muy liberales son estados con relativamente pocos encuestados.
+
+#Obtenemos el intervalo de confianza al 95%:
+
+quantile(data$very_liberal, c(0.025, 0.975))
+
+# Obtenemos el intervalo de confianza del 95% para la proporción:
+
+quantile(data$p, c(0.025, 0.975))
+```
+
   - Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
   la estimación de máxima verosimilitud para *very liberal*. ¿Qué observas?  
+```{r}
+ggplot(data) +
+  geom_point(aes(x = n, y = p, size = p, color = p), alpha = 0.7) + 
+  geom_smooth(aes(x = n, y = p), method = "loess", se = FALSE, color = "blue") +
+  geom_text(aes(x = n, y = p, label = ifelse(p > 0.07, as.character(state), '')), 
+            position = position_nudge(y = 0.004), 
+            check_overlap = TRUE, 
+            hjust = 0.5, 
+            size = 3) +
+  ylab("Proporción de personas muy liberales") +
+  xlab("Número de encuestas") +
+  ggtitle("Distribución de Ideología Liberal por Estado",
+          subtitle = "Basado en encuestas durante la campaña presidencial 2008 de EUA") +
+  theme_minimal() +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_size_continuous(range = c(1, 5))
+
+"Hay una tendencia ligeramente ascendente a medida que aumenta el número de encuestados, aunque esta tendencia no es muy marcada. Es importante señalar que, con un número limitado de datos que superan las 2000 encuestas por estado, estos resultados pueden no ser un reflejo fiel de la situación real. Además, hay una notable agrupación de datos en el rango de 0 a 1000 encuestados. Sin embargo, la gráfica no proporciona claridad sobre si hay algún patrón discernible para estos datos. También es notable la presencia de algunos puntos de datos outliers.
+```
+  
   - Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
   para cada estado y en el eje *y* la estimación de máxima verosimilitud para *very liberal*. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+```{r}
+elecciones <- read_csv('data/2008ElectionResult.csv')
+
+# Convertimos los nombres de los estados a minúsculas para que coincidan con la gráfica anterior
+new_elecciones <- elecciones %>%
+  mutate(state = tolower(state)) %>%
+  select(state, vote_Obama_pct)
+
+# Combinamos ambos conjuntos de datos
+new_data <- merge(new_elecciones, data, by = 'state')
+
+# Realizamos la gráfica
+ggplot(new_data) +
+  geom_point(aes(x = vote_Obama_pct, y = p, size = p, color = p), alpha = 0.7) + 
+  geom_smooth(aes(x = vote_Obama_pct, y = p), method = "loess", se = FALSE, color = "blue") +
+  geom_text(aes(x = vote_Obama_pct, y = p, label = ifelse(p > 0.07, as.character(state), '')), 
+            position = position_nudge(y = 0.004), 
+            check_overlap = TRUE, 
+            hjust = 0.5, 
+            size = 3) +
+  ylab("Proporción de personas muy liberales") +
+  xlab("Porcentaje de votos de Obama") +
+  ggtitle("Relación entre Votos de Obama y Liberalismo por Estado",
+          subtitle = "Basado en los resultados de la elección presidencial de 2008 en EE.UU.") +
+  theme_minimal() +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_size_continuous(range = c(1, 5))
+
+```
 
 * Estima el mismo porcentaje (*very liberal*) usando inferencia bayesiana, en particular
 la familia conjugada beta-binomial. Deberás estimar la proporción de manera 
@@ -407,6 +541,25 @@ independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
 largo de todos: $Beta(8,160)$.
 
   - Simula de la distribución incial y describe.
+```{r}
+# Establecer una semilla para reproducibilidad
+set.seed(123)
+
+# Parámetros de la distribución Beta
+alpha <- 8
+beta <- 160
+
+# Simular 10000 valores de la distribución Beta(8, 160)
+samples <- rbeta(10000, alpha, beta)
+
+# Resumen de los valores simulados
+summary(samples)
+
+# Histograma de los valores simulados
+hist(samples, breaks = 50, main = 'Simulación de la Distribución Beta(8, 160)', xlab = 'Valor', ylab = 'Frecuencia')
+
+#La forma de la distribución Beta(8, 160) será sesgada hacia la izquierda, ya que el valor de beta es sustancialmente mayor que alpha, indicando que la probabilidad previa de ser 'muy liberal' es baja. 
+```
   
   - Para dos de los estados: Idaho y Virginia, adicional a calcular la posterior
   usando las propiedades de la familia conjugada, utiliza Stan para hacer la inferencia, 
