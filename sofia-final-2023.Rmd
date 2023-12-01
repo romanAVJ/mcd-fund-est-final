@@ -137,13 +137,48 @@ Se encontró un p-valor de 0.9268, lo que sugiere que no hay evidencia suficient
 
 * Sea $\lambda_0>0$. ¿Cuál es la prueba Wald para
 $H_0: \lambda = \lambda_0, H_1: \lambda \neq \lambda_0$
+```{r}
+# Función para la Prueba de Wald
+prueba_wald_poisson <- function(datos, lambda_0) {
+    n <- length(datos)
+    lambda_hat <- mean(datos)  # Estimador de Máxima Verosimilitud
+    wald_statistic <- (lambda_hat - lambda_0)^2 / (lambda_hat / n)  
+    p_valor <- 1 - pchisq(wald_statistic, df = 1)  
+    return(p_valor < 0.05)  
+}
+
+```
 
 * Si $\lambda_0=1$, $n=20$ y $\alpha = 0.05$. Simula  $X_1, ...X_n \sim Poisson(\lambda_0)$ y realiza la prueba Wald, repite 1000 veces y registra
 el porcentaje de veces que rechazas $H_0$, qué tan cerca te queda el
 error del tipo 1 de $0.05$?
 
+```{r}
+# H0: lambda = lambda_0 vs H1: lambda != lambda_0
+
+set.seed(123)  # Para reproducibilidad
+lambda_0 <- 1
+n <- 20
+alpha <- 0.05
+num_simulaciones <- 1000
+rechazos <- 0
+
+for (i in 1:num_simulaciones) {
+    muestra <- rpois(n, lambda_0)  # Simular la muestra
+    if (prueba_wald_poisson(muestra, lambda_0)) {
+        rechazos <- rechazos + 1
+    }
+}
+
+# Calcular el porcentaje de rechazos
+porcentaje_rechazos <- rechazos / num_simulaciones
+porcentaje_rechazos
 
 
+```
+
+El valor obtenido, 0.049, es muy cercano al nivel de significancia establecido de 
+alpha = 0.05. Esto significa que la tasa de error de tipo I (la probabilidad de rechazar incorrectamente la hipótesis nula cuando es verdadera, P(RH0|H0)) es casi igual al nivel de significancia lo que sugiere que la prueba de Wald está calibrada adecuadamente. Está identificando correctamente la proporción esperada de resultados falsamente positivos (rechazos de la hipótesis nula) bajo la suposición de que la hipótesis nula es verdadera.
 
 ## 2. Relación entre bootstrap e inferencia bayesiana
 
