@@ -1,8 +1,10 @@
 ---
 title: "Final Fundamentos 2023"
-author: "Sofía & Román"
+author: "Sofía Gerard & Román Vélez"
 date: "5/12/2023"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 # Instrucciones: 
@@ -792,9 +794,10 @@ df_obama_posterior |>
   
 ```{r}
 
-install.packages('cmdstanr', repos = c('https://mc-stan.org/r-packages/', getOption('repos')))
+#install.packages('cmdstanr', repos = c('https://mc-stan.org/r-packages/', getOption('repos')))
 library(cmdstanr)
 library(posterior)
+
 # Instalar CmdStan usando cmdstanr
 cmdstanr::install_cmdstan()
 
@@ -916,7 +919,7 @@ table_obama_posterior |>
   geom_text(aes(label=state_abr), hjust=0, vjust=0) +
   theme_minimal()
 ```
-*conclusiones (WIP)* (poner que "the proportion looks more controlled with the bayesian method")
+*Conclusiones* Las estimaciones de la proporción de votantes liberales parecen ser más controladas cuando se utiliza el método bayesiano en comparación con el método frecuentista. Los puntos rojos representativos del método bayesiano en el gráfico muestran una dispersión reducida, lo que indica una variabilidad menor en las estimaciones a lo largo de diferentes estados, independientemente del número de encuestas realizadas. Esto podría reflejar la capacidad del método bayesiano de integrar efectivamente información previa y gestionar mejor la incertidumbre, resultando en estimaciones más coherentes y confiables de la proporción de votantes liberales.
 
   - Utiliza la media posterior de cada estado como estimador puntual y repite las
   gráficas del inciso anterior.
@@ -934,7 +937,7 @@ df_elections |>
     theme_minimal()
 ```
   
-*conclusiones (WIP)* 
+*Conclusiones* El gráfico muestra una comparación entre la proporción de votantes liberales y el porcentaje de votos para Obama, con cada punto representando un estado. Los datos revelan una correlación positiva: los estados con un mayor porcentaje de votos para Obama también tienden a tener una proporción más alta de votantes liberales. Esto refleja el comportamiento electoral esperado, donde los votantes con tendencias liberales son más propensos a apoyar a un candidato demócrata. La disposición de los estados en el gráfico sugiere que aquellos con inclinaciones políticas liberales dieron un fuerte apoyo a Obama, mientras que los estados con menos votantes liberales tendieron a tener menores porcentajes de votos para él.
 
 **Nota:** En problemas como este, donde estamos estimando un parámetro para cada 
 grupo (estado e nuestro caso) podemos optar por un modelo jerárquico, en 
@@ -954,3 +957,4 @@ donde $g(a_0)$ y $f(b_0)$ son las inciales seleccionadas con conocimiento expert
 # Acknowledgements
 
 Román: Gracias Teresa por el curso, me gustó mucho y aprendí un montón. Me ha sido muy útil en mi trabajo. La mejor de las suertes el siguiente sexenio en el conteo rápido!
+Sofia: Tere gracias por un curso tan importante e interesante. Lo disfruté muchísimo. Suerte el próximo semestre!
