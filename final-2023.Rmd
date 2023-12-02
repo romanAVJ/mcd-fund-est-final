@@ -896,7 +896,7 @@ Los valores de ess_bulk y ess_tail son excepcionalmente altos en todos los casos
   gráficas del inciso anterior.
   
 ```{r}
-table_obama_posterior |> 
+df_obama_posterior |> 
   mutate(method = "bayesian") |> 
   select(state, total_vliberal, prop_vliberal, n_polls, method) |>
   add_row(
@@ -917,7 +917,7 @@ table_obama_posterior |>
 # graph scatter between prop_vliberal and vote_Obama_pct, using the point estimate from table_stats_obama
 df_elections |>
   mutate(state = tolower(state)) |>
-  inner_join(table_obama_posterior, by=c("state")) |>
+  inner_join(df_obama_posterior, by=c("state")) |>
   select(state, prop_vliberal, vote_Obama_pct) |>
   mutate(state_abr = str_sub(state, 1, 2)) |>
   ggplot(aes(x=vote_Obama_pct, y=prop_vliberal)) +
