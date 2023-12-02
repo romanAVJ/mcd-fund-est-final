@@ -449,8 +449,9 @@ Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de
 ecnuestas realizadas durante la campaña presidencial 2008 de EUA.
 
 ```{r}
-poll_data <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
+df_polls <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
 
+glimpse(df_polls)
 ```
 
 * Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
@@ -458,7 +459,10 @@ y DC)  que se considera *very liberal*, utilizando el estimador de máxima
 verosimilitud.
 
 ```{r}
-data <- poll_data %>%
+df_elections <- read_csv("data/2008ElectionResult.csv")
+glimpse(df_elections)
+
+data <- df_polls %>%
   #Eliminamos los estados que no nos interesan
   filter(!state %in% c('alaska', 'hawaii','washington dc')) %>%
   #Filtramos los datos de la ideología para clasificarlos más fácilmente
@@ -469,16 +473,9 @@ data <- poll_data %>%
   #Ordenamos los estados con mayor proporción
   arrange(desc(p))
 head(data)
+  
 
-#Podemos observar que los estados que se consideran muy liberales son estados con relativamente pocos encuestados.
 
-#Obtenemos el intervalo de confianza al 95%:
-
-quantile(data$very_liberal, c(0.025, 0.975))
-
-# Obtenemos el intervalo de confianza del 95% para la proporción:
-
-quantile(data$p, c(0.025, 0.975))
 ```
 
   - Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
@@ -500,7 +497,8 @@ ggplot(data) +
   scale_color_gradient(low = "blue", high = "red") +
   scale_size_continuous(range = c(1, 5))
 
-"Hay una tendencia ligeramente ascendente a medida que aumenta el número de encuestados, aunque esta tendencia no es muy marcada. Es importante señalar que, con un número limitado de datos que superan las 2000 encuestas por estado, estos resultados pueden no ser un reflejo fiel de la situación real. Además, hay una notable agrupación de datos en el rango de 0 a 1000 encuestados. Sin embargo, la gráfica no proporciona claridad sobre si hay algún patrón discernible para estos datos. También es notable la presencia de algunos puntos de datos outliers.
+# "Hay una tendencia ligeramente ascendente a medida que aumenta el número de encuestados, aunque esta tendencia no es muy marcada. Es importante señalar que, con un número limitado de datos que superan las 2000 encuestas por estado, estos resultados pueden no ser un reflejo fiel de la situación real. Además, hay una notable agrupación de datos en el rango de 0 a 1000 encuestados. Sin embargo, la gráfica no proporciona claridad sobre si hay algún patrón discernible para estos datos. También es notable la presencia de algunos puntos de datos outliers.
+
 ```
   
   - Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
@@ -533,6 +531,8 @@ ggplot(new_data) +
   scale_color_gradient(low = "blue", high = "red") +
   scale_size_continuous(range = c(1, 5))
 
+# La gráfica muestra una correlación positiva entre el porcentaje de votos que obtuvo Obama en las elecciones de 2008 y la proporción de personas que se identifican como "muy liberales" en cada estado de EE.UU. Los estados con mayor porcentaje de votos para Obama tienden a tener una mayor proporción de personas muy liberales. Sin embargo, la variabilidad entre los estados sugiere que otros factores podrían influir.
+
 ```
 
 * Estima el mismo porcentaje (*very liberal*) usando inferencia bayesiana, en particular
@@ -542,31 +542,136 @@ largo de todos: $Beta(8,160)$.
 
   - Simula de la distribución incial y describe.
 ```{r}
-# Establecer una semilla para reproducibilidad
-set.seed(123)
 
-# Parámetros de la distribución Beta
-alpha <- 8
-beta <- 160
 
-# Simular 10000 valores de la distribución Beta(8, 160)
-samples <- rbeta(10000, alpha, beta)
 
-# Resumen de los valores simulados
-summary(samples)
+# Definir la función para simular la distribución a posteriori
+simulate_prop_posterior <- function(n_success, n_obs, n_sim=10000, A=8, B=160, seed=8){
 
-# Histograma de los valores simulados
-hist(samples, breaks = 50, main = 'Simulación de la Distribución Beta(8, 160)', xlab = 'Valor', ylab = 'Frecuencia')
+  # Actualizar A y B basados en los éxitos y el número total de observaciones
+  A_posterior <- A + n_success
+  B_posterior <- B + (n_obs - n_success)
 
-#La forma de la distribución Beta(8, 160) será sesgada hacia la izquierda, ya que el valor de beta es sustancialmente mayor que alpha, indicando que la probabilidad previa de ser 'muy liberal' es baja. 
+  # Simular de la distribución a posteriori
+  set.seed(seed)
+  prop_posterior <- rbeta(n=n_sim, shape1=A_posterior, shape2=B_posterior)
+  return(prop_posterior)
+}
+
+# Simular la distribución a posteriori para cada estado
+df_obama_posterior <- table_polls %>%
+  group_by(state) %>%
+  mutate(
+    prop_posterior = list(simulate_prop_posterior(
+      n_success = total_vliberal,
+      n_obs = n_polls
+    ))
+  ) %>%
+  ungroup() %>%
+  select(state, prop_posterior) %>%
+  unnest(prop_posterior)
+
+# Obtener la media, la desviación estándar y el intervalo de confianza del 95% para cada estado
+table_stats_obama <- df_obama_posterior %>%
+  group_by(state) %>%
+  summarise(
+    mean = mean(prop_posterior),
+    std = sd(prop_posterior),
+    ci_lower = quantile(prop_posterior, probs = 0.025),
+    ci_upper = quantile(prop_posterior, probs = 0.975)
+  ) %>%
+  arrange(state)
+
+# Graficar la distribución para cada estado
+df_obama_posterior %>%
+  ggplot(aes(x = prop_posterior)) +
+  geom_histogram(bins = 50) +
+  geom_vline(
+    data = table_stats_obama,
+    aes(xintercept = mean),
+    color = "red"
+  ) +
+  geom_vline(
+    data = table_stats_obama,
+    aes(xintercept = ci_lower),
+    color = "red",
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    data = table_stats_obama,
+    aes(xintercept = ci_upper),
+    color = "red",
+    linetype = "dashed"
+  ) +
+  facet_wrap(~state, ncol = 5) +
+  theme_minimal()
+
 ```
   
   - Para dos de los estados: Idaho y Virginia, adicional a calcular la posterior
   usando las propiedades de la familia conjugada, utiliza Stan para hacer la inferencia, 
   revisa los diagnósticos de convergencia y describe tus observaciones ($\hat{R}$ y $ESS$).
 
+
+```{r}
+## Stan 
+
+install.packages('cmdstanr', repos = c('https://mc-stan.org/r-packages/', getOption('repos')))
+library(cmdstanr)
+library(posterior)
+library(tidyverse)
+# Instalar CmdStan usando cmdstanr
+cmdstanr::install_cmdstan()
+
+idaho_data <- data %>% filter(state == "idaho")
+virginia_data <- data %>% filter(state == "virginia")
+
+# Compilar el modelo Stan
+model <- cmdstan_model("beta_binomial_model.stan")
+
+# Ajustar el modelo a los datos de Idaho
+fit_idaho <- model$sample(
+  data = list(
+    n_success = idaho_data$very_liberal,
+    n_trials = idaho_data$n,
+    alpha_prior = alpha_prior,
+    beta_prior = beta_prior
+  ),
+  seed = 123
+)
+
+# Ajustar el modelo a los datos de Virginia
+fit_virginia <- model$sample(
+  data = list(
+    n_success = virginia_data$very_liberal,
+    n_trials = virginia_data$n,
+    alpha_prior = alpha_prior,
+    beta_prior = beta_prior
+  ),
+  seed = 123
+)
+
+# Diagnósticos para Idaho
+fit_idaho$summary()
+
+# Diagnósticos para Virginia
+fit_virginia$summary()
+
+# Para Idaho, los valores de rhat son 1.000553 y 1.001131, lo cual es muy cercano a 1. Esto sugiere que las cadenas MCMC han convergido bien para el parámetro en cuestión.
+
+# Los valores de ess_bulk y ess_tail son 1770.480 y 1898.027 para la primera fila, y 1658.257 y 1551.814 para la segunda fila, respectivamente. Estos valores son relativamente altos, lo que indica que existe una cantidad sustancial de muestras efectivas para estimar la media y las colas de la distribución posterior. 
+
+# Para Virginia, los valores de rhat son 1.004061 y 1.002552. Estos están ligeramente por encima de 1 pero son todavía aceptables. 
+
+# Los valores de ess_bulk y ess_tail para Virginia son 1605.263 y 1991.545 en la primera fila, y 1373.950 y 1641.210 en la segunda fila, respectivamente. Aunque estos valores son ligeramente más bajos que los de Idaho, todavía son altos y sugieren que tienes una cantidad razonable de muestras efectivas para la estimación.
+
+```
+
   - Utiliza la media posterior de cada estado como estimador puntual y repite las
   gráficas del inciso anterior.
+```{r}
+
+```
 
 
 **Nota:** En problemas como este, donde estamos estimando un parámetro para cada 
