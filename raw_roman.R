@@ -439,7 +439,7 @@ table_polls |>
 # graph scatter between prop_vliberal and vote_Obama_pct, add the name of the state
 table_obama |>
   mutate(state_abr = str_sub(state, 1, 2)) |>
-  ggplot(aes(x=prop_vliberal, y=vote_Obama_pct)) +
+  ggplot(aes(x=vote_Obama_pct, y=prop_vliberal)) +
     geom_point() +
     geom_text(aes(label=state), hjust=0, vjust=0) +
     theme_minimal()
@@ -625,7 +625,7 @@ df_elections |>
   inner_join(table_obama_posterior, by=c("state")) |>
   select(state, prop_vliberal, vote_Obama_pct) |>
   mutate(state_abr = str_sub(state, 1, 2)) |>
-  ggplot(aes(x=prop_vliberal, y=vote_Obama_pct)) +
+  ggplot(aes(x=vote_Obama_pct, y=prop_vliberal)) +
     geom_point() +
     geom_text(aes(label=state), hjust=0, vjust=0) +
     theme_minimal()
