@@ -1,0 +1,690 @@
+---
+title: "Final Fundamentos 2023 Sofia Gerard y Román Velez"
+output: html_document
+---
+
+Un reporte con las respuestas se deberá enviar por correo electrónico a más 
+tardar el martes 5 a las 21:00 horas.
+
+Instrucciones: 
+
+- En las siguientes preguntas describe tus procedimientos y escribe las
+respuestas explícitamente (que no haya necesidad de correr código para 
+obtenerlas). 
+
+- Incluye el código.
+
+- No está permitido discutir el exámen fuera de su equipo.
+
+- Para dudas (que no deben incluir info. de la respuesta) se preguntará en el 
+canvas del grupo.
+
+- Consideren el material de visualización al hacer sus gráficas y reportar sus
+resultados.
+```{r}
+library(tidyverse)
+library(dplyr)
+library(tibble)
+
+```
+
+## 1. Pruebas de hipótesis
+
+1.1 De acuerdo a una encuesta en EUA, 26% de los residentes adultos de Illinois han 
+terminado la preparatoria. Un investigador sospecha que este porcentaje es
+menor en un condado particular del estado. Obtiene una muestra aleatoria de 
+dicho condado y encuentra que 69 de 310 personas en la muestra han completado
+la preparatoria. Estos resultados soportan su hipótesis? (describe tu elección de
+prueba de hipótesis, valor p y conclusión).
+
+```{r}
+
+# H0: p = 0.26 vs H1: p < 0.26 (es una prueba de dos colas pero sólo nos interesa
+# la cola inferior)
+
+# Asumimos normalidad asintótica 
+# No se si si es con la prueba de Wald
+
+x <- 69
+n <- 310
+p0 <- 0.26
+
+p_hat <- x/n
+
+ee <- sqrt(p_hat * (1-p_hat) / n)
+w <- (p_hat - p0) / ee
+valor_p <- 2 * (1 - pnorm(abs(w))) ### aqui no estoy segura porque esta es para dos colas
+valor_p
+
+cat("Estadístico:", w, "\nValor p:", valor_p, "\n")
+
+```
+
+Tenemos un p-value de aproximadamente .11, que es la probabilidad de obtener una proporción tan baja o más baja que la observada en la muestra, asumiendo que la hipótesis nula es cierta. 
+No hay suficiente evidencia estadística para rechazar la hipótesis nula. No se puede concluir que la proporción de personas que han terminado la preparatoria en el condado particular sea significativamente menor que el promedio estatal del 26%.
+
+
+1.2 Mendel criaba chícharos de semillas lisas amarillas y de semillas
+corrugadas verdes. Éstas daban lugar a 4 tipos de descendientes: amarrillas lisas, amarillas corrugadas, verdes lisas y verdes corrugadas. El número de cada una
+es multinomial con parámetro $p=(p_1, p_2, p_3, p_4)$. De acuerdo a su teoría de
+herencia este vector de probabilidades es:
+$$p=(9/16,3/16,3/16,1/16)$$
+A lo largo de $n=556$ experimentos observó $x=(315,101,108,32)$. Utiliza la prueba
+de cociente de verosimilitudes para probar $H_0:p=p_0$ contra $H_0:p\ne p_0$.
+
+```{r}
+# p <- (p_1, p_2, p_3, p_4)
+# Definición de probabilidades y datos
+# Definición de probabilidades y datos
+p_0 <- c(9/16, 3/16, 3/16, 1/16)  
+x <- c(315, 101, 108, 32)       
+n <- sum(x)                       
+
+# Log-verosimilitud bajo H0 usando dmultinom
+ll_H0 <- dmultinom(x, size = n, prob = p_0, log = TRUE)
+
+# Estimación MLE de las probabilidades para H1
+p_hat <- x / n  
+
+# Log-verosimilitud bajo H1 usando dmultinom con las probabilidades estimadas
+ll_H1 <- dmultinom(x, size = n, prob = p_hat, log = TRUE)
+
+# Cálculo del estadístico lambda
+lambda <- 2 * (ll_H1 - ll_H0)
+
+### Simulación bajo H0: 
+
+lambda_multinomial <- function(x, p_0) {
+  p_mv <- x / sum(x)
+  log_p_mv <- sum(dmultinom(x, prob = p_mv, log = TRUE))
+  log_p_nula <- sum(dmultinom(x, prob = p_0, log = TRUE))
+  lambda <- 2 * (log_p_mv - log_p_nula)
+  return(lambda)
+}
+
+# Valor observado
+x_obs <- c(315, 101, 108, 32)
+lambda_obs <- lambda_multinomial(x_obs, p_0)
+
+# Simulación bajo la hipótesis nula
+num_simulaciones <- 10000
+simulados_nula <- replicate(num_simulaciones, rmultinom(1, n, p_0), simplify = "array")
+
+# Ajustar las dimensiones y convertir en matriz
+simulados_nula <- aperm(simulados_nula, c(2, 1, 3))
+simulados_nula <- matrix(simulados_nula[1, , ], ncol = length(p_0), byrow = TRUE)
+
+# Calcular lambda para cada simulación
+lambda_vals <- apply(simulados_nula, 1, function(sim_data) {
+  lambda_multinomial(as.integer(sim_data), p_0)
+})
+
+# Crear un data frame para el gráfico
+sims_tbl <- tibble(lambda = lambda_vals)
+
+# Gráfico de las simulaciones
+g1 <- ggplot(sims_tbl, aes(x = lambda)) + 
+  geom_histogram(binwidth = 0.7) +
+  geom_vline(xintercept = lambda_obs, color = "red")
+
+# Calcular el p-valor
+p_valor <- mean(sims_tbl$lambda >= lambda_obs)
+p_valor
+
+```
+
+Se encontró un p-valor de 0.9268, lo que sugiere que no hay evidencia suficiente para rechazar la hipótesis nula. Esto implica que las proporciones observadas en los experimentos de Mendel no difieren significativamente de las proporciones teóricas que él propuso, apoyando así su teoría de herencia en este conjunto de datos.
+
+1.3. Sean $X_1, ...X_n \sim Poisson(\lambda)$,
+
+* Sea $\lambda_0>0$. ¿Cuál es la prueba Wald para
+$H_0: \lambda = \lambda_0, H_1: \lambda \neq \lambda_0$
+```{r}
+# Función para la Prueba de Wald
+prueba_wald_poisson <- function(datos, lambda_0) {
+    n <- length(datos)
+    lambda_hat <- mean(datos)  # Estimador de Máxima Verosimilitud
+    wald_statistic <- (lambda_hat - lambda_0)^2 / (lambda_hat / n)  
+    p_valor <- 1 - pchisq(wald_statistic, df = 1)  
+    return(p_valor < 0.05)  
+}
+
+```
+
+* Si $\lambda_0=1$, $n=20$ y $\alpha = 0.05$. Simula  $X_1, ...X_n \sim Poisson(\lambda_0)$ y realiza la prueba Wald, repite 1000 veces y registra
+el porcentaje de veces que rechazas $H_0$, qué tan cerca te queda el
+error del tipo 1 de $0.05$?
+
+```{r}
+# H0: lambda = lambda_0 vs H1: lambda != lambda_0
+
+set.seed(123)  # Para reproducibilidad
+lambda_0 <- 1
+n <- 20
+alpha <- 0.05
+num_simulaciones <- 1000
+rechazos <- 0
+
+for (i in 1:num_simulaciones) {
+    muestra <- rpois(n, lambda_0)  # Simular la muestra
+    if (prueba_wald_poisson(muestra, lambda_0)) {
+        rechazos <- rechazos + 1
+    }
+}
+
+# Calcular el porcentaje de rechazos
+porcentaje_rechazos <- rechazos / num_simulaciones
+porcentaje_rechazos
+
+
+```
+
+El valor obtenido, 0.049, es muy cercano al nivel de significancia establecido de 
+alpha = 0.05. Esto significa que la tasa de error de tipo I (la probabilidad de rechazar incorrectamente la hipótesis nula cuando es verdadera, P(RH0|H0)) es casi igual al nivel de significancia lo que sugiere que la prueba de Wald está calibrada adecuadamente. Está identificando correctamente la proporción esperada de resultados falsamente positivos (rechazos de la hipótesis nula) bajo la suposición de que la hipótesis nula es verdadera.
+
+## 2. Relación entre bootstrap e inferencia bayesiana
+
+Consideremos el caso en que tenemos una única observación $x$ proveniente de 
+una distribución normal
+
+$$x \sim N(\theta, 1)$$
+
+Supongamos ahora que elegimos una distribución inicial Normal.
+
+$$\theta \sim N(0, \tau)$$ 
+
+dando lugar a la distribución posterior (como vimos en la tarea)
+
+$$\theta|x \sim N\bigg(\frac{x}{1 + 1/\tau}, \frac{1}{1+1/\tau}\bigg)$$ 
+
+Ahora, entre mayor $\tau$, más se concentra la posterior en el estimador de
+máxima verosimilitud $\hat{\theta}=x$. En el límite, cuando $\tau \to \infty$
+obtenemos una inicial no-informativa (constante) y la distribución posterior
+
+$$\theta|x \sim N(x,1)$$
+
+Esta posterior coincide con la distribución de bootstrap paramétrico en que generamos valores $x^*$ de $N(x,1)$, donde $x$ es el estimador de máxima
+verosimilitud.
+
+Lo anterior se cumple debido a que utilizamos un ejemplo Normal pero también 
+se cumple aproximadamente en otros casos, lo que conlleva a una correspondencia
+entre el bootstrap paramétrico y la inferencia bayesiana. En este caso, la
+distribución bootstrap representa (aproximadamente) una distribución posterior 
+no-informartiva del parámetro de interés. Mediante la perturbación en los datos
+el bootstrap aproxima el efecto bayesiano de perturbar los parámetros con la
+ventaja de ser más simple de implementar (en muchos casos).  
+*Los detalles se pueden leer en _The Elements of Statistical Learning_ de 
+Hastie y Tibshirani.
+
+Comparemos los métodos en otro problema con el fin de apreciar la similitud en 
+los procedimientos: 
+
+Supongamos $x_1,...,x_n \sim N(0, \sigma^2)$, es decir, los datos provienen de 
+una distribución con media cero y varianza desconocida.
+
+En los puntos 2.1 y 2.2 buscamos hacer inferencia del parámetro $\sigma^2$.
+
+2.1 Bootstrap paramétrico.
+
+* Escribe la función de log-verosimilitud y calcula el estimador de máxima 
+verosimilitud para $\sigma^2$.  Supongamos que observamos los datos 
+`x` (en la carpeta datos), ¿Cuál es tu estimación de la varianza?
+```{r}
+
+## Log-verosimilitud para una distribución normal con media mu y desviación estándar sigma
+# log L(mu, sigma) = sum(desde i=1 hasta n) log(1/(sqrt(2*pi*sigma^2)) * exp(-((x_i - mu)^2)/(2*sigma)))
+
+# Esto se simplifica a:
+# log L(mu, sigma) = sum(desde i=1 hasta n) (log(1/sqrt(2*pi)) + (1/2)*log(1/sigma^2) - (-(x_i - mu)^2)/(2*sigma^2))
+
+# La derivada de la log-verosimilitud con respecto a sigma^2 es:
+# d(log L)/d(sigma^2) = 0 = (1/n) * sum(desde i=1 hasta n) ((x_i - mu)^2)
+
+# Dado que mu = 0, podemos simplificar la derivada a:
+# d(log L)/d(sigma^2) = (1/n) * sum(desde i=1 hasta n) x_i^2
+
+## MLE para sigma**2 = (1/n) * sum(desde i=1 hasta n) x_i**2
+```
+
+```{r}
+load("~/Github/mcd-fund-est-final/data/x.RData")
+
+muestra <-x  
+
+crear_log_p_2 <- function(x){
+  log_p <- function(pars){
+    mean = pars[1]
+    desv_est = pars[2]
+
+    z <- (x - 0) / desv_est
+    log_verosim <- -(log(desv_est) +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+
+log_p <- crear_log_p_2(muestra)
+
+ # Optimizamos y vemos si hace convergencia 
+res <- optim(c(0, 0.5), log_p, control = list(fnscale = -1, maxit = 1000), method = "Nelder-Mead")
+res$convergence
+
+# Calculamos el estimador de máxima verosimilitud
+est_mle <- tibble(parametro = c("Sigma^2"), Estimador = res$par[2]^2) %>% 
+  column_to_rownames(  var = "parametro")
+est_mle
+
+sigma_est=mean(muestra^2)
+sigma_est
+```
+
+* Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y 
+realiza un histograma de las replicaciones bootstrap.
+
+```{r}
+simular_modelo <- function(n, sigma){
+  rnorm(n, 0, sqrt(sigma))
+}
+muestra_bootstrap <- simular_modelo(length(muestra), est_mle["Sigma^2", "Estimador"])
+
+head(muestra_bootstrap)
+
+log_p_boot <- crear_log_p_2(muestra_bootstrap)
+res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 3000), method = "Nelder-Mead")
+res_boot$convergence
+
+est_mle_boot <- tibble(parametro = c("Sigma^2"), Estimador = res_boot$par[2]^2) %>% 
+  column_to_rownames(  var = "parametro")
+est_mle_boot
+
+rep_boot <- function(rep, crear_log_p_2, est_mle, n){
+  muestra_bootstrap <- simular_modelo(length(muestra), est_mle["Sigma^2", "Estimador"])
+  log_p_boot <- crear_log_p_2(muestra_bootstrap)
+  # optimizamos
+  res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 5000), method = "Nelder-Mead")
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c( "Sigma^2"), estimador_boot = res_boot$par[2]^2) 
+}
+reps_boot <- map_dfr(1:5000, ~ rep_boot(.x, crear_log_p_2, est_mle, n = length(muestra)), rep = ".id") 
+reps_boot
+
+error_est <- reps_boot %>% group_by(parametro) %>% 
+  summarise(ee_boot = sd(estimador_boot)) 
+
+error_est
+
+ggplot(reps_boot, aes(x = estimador_boot)) +
+  geom_histogram(title = "Replicaciones Bootstrap",color="darkblue", fill="lightblue") +facet_wrap(~parametro)
+```
+
+2.2 Análisis bayesiano
+
+* Continuamos con el problema de hacer inferencia de $\sigma^2$. Comienza 
+especificando una inicial Gamma Inversa, justifica tu elección de los parámetros 
+de la distribución inicial y grafica la función de densidad.
+```{r}
+# La media de una distribución Gamma Inversa es beta/alpha-1 y la varianza es beta^2/(alpha-1)^2-(alpha-2)
+
+# De lo anterior tenemos que sigma^2 = beta^2/(alpha-1)^2-(alpha-2) definida solo para alpha > 2, no podemos elegir beta = 0 porque está indefinido. 
+
+# Elegimos beta = 2 y alpha = 2 
+
+```
+
+* Calcula analíticamente la distribución posterior.
+```{r}
+# P(θ|X)∝P(X|θ)P(θ)
+
+# Tenemos que f(σ2|x1,...,xn) = GammaI(α+n/2 , β+1/2∑(xi−μ)^2)
+
+
+```
+
+* Realiza un histograma de simulaciones de la distribución posterior y calcula
+el error estándar de la distribución.
+```{r}
+Inverse_gamma <- function(m, n){
+  alpha <- n/2 + 2
+  beta <- 2+ 0.5*(sum(x^2))  
+  gamma <- rgamma(1000, shape = alpha, rate = beta)
+  gamma_inversa <- 1 / gamma  
+  tibble(parametro = c("sigma^2"), estimador_posterior = gamma_inversa)
+}
+
+simulaciones <- map_dfr(1:5000, ~ Inverse_gamma(.x, n = length(muestra)), m = ".id")
+
+ggplot(simulaciones, aes(x = estimador_posterior)) + geom_histogram(color="darkblue", fill="lightblue")
+```
+
+* ¿Cómo se comparan tus resultados con los de bootstrap paramétrico?
+```{r}
+est_mle_boot
+
+mean(simulaciones$estimador_posterior)
+
+# por lo que son cercanas a nuestro estimador inicial mas que en el caso de bootstrap parametrico, esto puede ser por la seleccion de variables posteriores y la forma analitica en que se consideraron.
+```
+
+2.3 Supongamos que ahora buscamos hacer inferencia del parámetro 
+$\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+```{r}
+# Tenemos que el estimador MLE de sigma**2 es (1/n) * sum(desde i=1 hasta n) x_i**2 y que tau = log(sigma), es decir tau = log(sqrt((1/n) * sum(desde i=1 hasta n) x_i**2))
+
+
+```
+
+* Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95%
+para el parámetro $\tau$ y realiza un histograma de las replicaciones 
+bootstrap.
+```{r}
+crear_log_p_3 <- function(x){
+  log_p <- function(pars){
+    tau <- log((sqrt((1/length(x))*sum(x^2))))
+    tau
+  }  
+  log_p
+}
+
+log_p_3 <- crear_log_p_3(muestra)
+
+res_3 <- optim(c(0, 0.5), log_p_3, control = list(fnscale = -1, maxit = 1000), method = "Nelder-Mead")
+res_3$convergence
+
+est_mle_3 <- tibble(parametro = c("tau"), Estimador = res_3$value) %>% 
+  column_to_rownames(  var = "parametro")
+est_mle_3
+
+muestra_bootstrap <- simular_modelo(length(muestra), est_mle_3["tau", "Estimador"])
+
+head(muestra_bootstrap)
+
+log_p_boot <- crear_log_p_3(muestra_bootstrap)
+res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 3000), method = "Nelder-Mead")
+res_boot$convergence
+
+est_mle_boot <- tibble(parametro = c("tau"), Estimador = res_boot$value) %>% 
+  column_to_rownames(  var = "parametro")
+
+
+rep_boot <- function(rep, crear_log_p_3, est_mle_3, n){
+  muestra_bootstrap <- simular_modelo(length(muestra), est_mle_3["tau", "Estimador"])
+  log_p_boot <- crear_log_p_3(muestra_bootstrap)
+  # optimizamos
+  res_boot <- optim(c(0, 0.5), log_p_boot, control = list(fnscale = -1, maxit = 5000), method = "Nelder-Mead")
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c( "tau"), estimador_boot = res_boot$value) 
+}
+reps_boot <- map_dfr(1:5000, ~ rep_boot(.x, crear_log_p_3, est_mle_3, n = length(muestra)), rep = ".id") 
+mean(reps_boot$estimador_boot)
+
+quantile(reps_boot$estimador_boot, c(0.05, 0.95))
+
+ggplot(reps_boot, aes(x = estimador_boot)) +
+  geom_histogram(title = "Replicaciones Bootstrap",color="darkblue", fill="lightblue") +facet_wrap(~parametro)
+
+```
+
+* Ahora volvamos a inferencia bayesiana, calcula  un intervalo de confianza para $\tau$ y un histograma de la distribución posterior de $\tau$.
+```{r}
+Inverse_gamma_2 <- function(m, n){
+  alpha <- n/2 + 2
+  beta <- 2+ 0.5*(sum(x^2))  
+  gamma <- sqrt(rgamma(1000, shape = alpha, rate = beta))
+  gamma_inversa <- gamma
+  tibble(parametro = c("tau"), estimador_posterior = gamma_inversa)
+}
+
+simulaciones_2 <- map_dfr(1:5000, ~ Inverse_gamma_2(.x, n = length(muestra)), m = ".id")
+
+graf <- ggplot(simulaciones_2, aes(x = estimador_posterior)) + geom_histogram(color="darkblue", fill="lightblue")
+
+graf
+
+quantile(simulaciones_2$estimador_posterior, c(0.05, 0.95))
+```
+
+### 3. Bayesiana y regularización
+
+Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de 
+ecnuestas realizadas durante la campaña presidencial 2008 de EUA.
+
+```{r}
+df_polls <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
+
+glimpse(df_polls)
+```
+
+* Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
+y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
+verosimilitud.
+
+```{r}
+df_elections <- read_csv("data/2008ElectionResult.csv")
+glimpse(df_elections)
+
+data <- df_polls %>%
+  #Eliminamos los estados que no nos interesan
+  filter(!state %in% c('alaska', 'hawaii','washington dc')) %>%
+  #Filtramos los datos de la ideología para clasificarlos más fácilmente
+  mutate(x = if_else(ideo == 'very liberal', 1, 0, 0)) %>%
+  group_by(state) %>%
+  #Obtenemos los datos de cada estado
+  summarise(very_liberal = sum(x), n = n(), p = very_liberal/n, .groups="drop") %>%
+  #Ordenamos los estados con mayor proporción
+  arrange(desc(p))
+head(data)
+  
+
+
+```
+
+  - Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
+  la estimación de máxima verosimilitud para *very liberal*. ¿Qué observas?  
+```{r}
+ggplot(data) +
+  geom_point(aes(x = n, y = p, size = p, color = p), alpha = 0.7) + 
+  geom_smooth(aes(x = n, y = p), method = "loess", se = FALSE, color = "blue") +
+  geom_text(aes(x = n, y = p, label = ifelse(p > 0.07, as.character(state), '')), 
+            position = position_nudge(y = 0.004), 
+            check_overlap = TRUE, 
+            hjust = 0.5, 
+            size = 3) +
+  ylab("Proporción de personas muy liberales") +
+  xlab("Número de encuestas") +
+  ggtitle("Distribución de Ideología Liberal por Estado",
+          subtitle = "Basado en encuestas durante la campaña presidencial 2008 de EUA") +
+  theme_minimal() +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_size_continuous(range = c(1, 5))
+
+# "Hay una tendencia ligeramente ascendente a medida que aumenta el número de encuestados, aunque esta tendencia no es muy marcada. Es importante señalar que, con un número limitado de datos que superan las 2000 encuestas por estado, estos resultados pueden no ser un reflejo fiel de la situación real. Además, hay una notable agrupación de datos en el rango de 0 a 1000 encuestados. Sin embargo, la gráfica no proporciona claridad sobre si hay algún patrón discernible para estos datos. También es notable la presencia de algunos puntos de datos outliers.
+
+```
+  
+  - Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
+  para cada estado y en el eje *y* la estimación de máxima verosimilitud para *very liberal*. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+```{r}
+elecciones <- read_csv('data/2008ElectionResult.csv')
+
+# Convertimos los nombres de los estados a minúsculas para que coincidan con la gráfica anterior
+new_elecciones <- elecciones %>%
+  mutate(state = tolower(state)) %>%
+  select(state, vote_Obama_pct)
+
+# Combinamos ambos conjuntos de datos
+new_data <- merge(new_elecciones, data, by = 'state')
+
+# Realizamos la gráfica
+ggplot(new_data) +
+  geom_point(aes(x = vote_Obama_pct, y = p, size = p, color = p), alpha = 0.7) + 
+  geom_smooth(aes(x = vote_Obama_pct, y = p), method = "loess", se = FALSE, color = "blue") +
+  geom_text(aes(x = vote_Obama_pct, y = p, label = ifelse(p > 0.07, as.character(state), '')), 
+            position = position_nudge(y = 0.004), 
+            check_overlap = TRUE, 
+            hjust = 0.5, 
+            size = 3) +
+  ylab("Proporción de personas muy liberales") +
+  xlab("Porcentaje de votos de Obama") +
+  ggtitle("Relación entre Votos de Obama y Liberalismo por Estado",
+          subtitle = "Basado en los resultados de la elección presidencial de 2008 en EE.UU.") +
+  theme_minimal() +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_size_continuous(range = c(1, 5))
+
+# La gráfica muestra una correlación positiva entre el porcentaje de votos que obtuvo Obama en las elecciones de 2008 y la proporción de personas que se identifican como "muy liberales" en cada estado de EE.UU. Los estados con mayor porcentaje de votos para Obama tienden a tener una mayor proporción de personas muy liberales. Sin embargo, la variabilidad entre los estados sugiere que otros factores podrían influir.
+
+```
+
+* Estima el mismo porcentaje (*very liberal*) usando inferencia bayesiana, en particular
+la familia conjugada beta-binomial. Deberás estimar la proporción de manera 
+independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
+largo de todos: $Beta(8,160)$.
+
+  - Simula de la distribución incial y describe.
+```{r}
+
+
+
+# Definir la función para simular la distribución a posteriori
+simulate_prop_posterior <- function(n_success, n_obs, n_sim=10000, A=8, B=160, seed=8){
+
+  # Actualizar A y B basados en los éxitos y el número total de observaciones
+  A_posterior <- A + n_success
+  B_posterior <- B + (n_obs - n_success)
+
+  # Simular de la distribución a posteriori
+  set.seed(seed)
+  prop_posterior <- rbeta(n=n_sim, shape1=A_posterior, shape2=B_posterior)
+  return(prop_posterior)
+}
+
+# Simular la distribución a posteriori para cada estado
+df_obama_posterior <- table_polls %>%
+  group_by(state) %>%
+  mutate(
+    prop_posterior = list(simulate_prop_posterior(
+      n_success = total_vliberal,
+      n_obs = n_polls
+    ))
+  ) %>%
+  ungroup() %>%
+  select(state, prop_posterior) %>%
+  unnest(prop_posterior)
+
+# Obtener la media, la desviación estándar y el intervalo de confianza del 95% para cada estado
+table_stats_obama <- df_obama_posterior %>%
+  group_by(state) %>%
+  summarise(
+    mean = mean(prop_posterior),
+    std = sd(prop_posterior),
+    ci_lower = quantile(prop_posterior, probs = 0.025),
+    ci_upper = quantile(prop_posterior, probs = 0.975)
+  ) %>%
+  arrange(state)
+
+# Graficar la distribución para cada estado
+df_obama_posterior %>%
+  ggplot(aes(x = prop_posterior)) +
+  geom_histogram(bins = 50) +
+  geom_vline(
+    data = table_stats_obama,
+    aes(xintercept = mean),
+    color = "red"
+  ) +
+  geom_vline(
+    data = table_stats_obama,
+    aes(xintercept = ci_lower),
+    color = "red",
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    data = table_stats_obama,
+    aes(xintercept = ci_upper),
+    color = "red",
+    linetype = "dashed"
+  ) +
+  facet_wrap(~state, ncol = 5) +
+  theme_minimal()
+
+```
+  
+  - Para dos de los estados: Idaho y Virginia, adicional a calcular la posterior
+  usando las propiedades de la familia conjugada, utiliza Stan para hacer la inferencia, 
+  revisa los diagnósticos de convergencia y describe tus observaciones ($\hat{R}$ y $ESS$).
+
+
+```{r}
+## Stan 
+
+install.packages('cmdstanr', repos = c('https://mc-stan.org/r-packages/', getOption('repos')))
+library(cmdstanr)
+library(posterior)
+library(tidyverse)
+# Instalar CmdStan usando cmdstanr
+cmdstanr::install_cmdstan()
+
+idaho_data <- data %>% filter(state == "idaho")
+virginia_data <- data %>% filter(state == "virginia")
+
+# Compilar el modelo Stan
+model <- cmdstan_model("beta_binomial_model.stan")
+
+# Ajustar el modelo a los datos de Idaho
+fit_idaho <- model$sample(
+  data = list(
+    n_success = idaho_data$very_liberal,
+    n_trials = idaho_data$n,
+    alpha_prior = alpha_prior,
+    beta_prior = beta_prior
+  ),
+  seed = 123
+)
+
+# Ajustar el modelo a los datos de Virginia
+fit_virginia <- model$sample(
+  data = list(
+    n_success = virginia_data$very_liberal,
+    n_trials = virginia_data$n,
+    alpha_prior = alpha_prior,
+    beta_prior = beta_prior
+  ),
+  seed = 123
+)
+
+# Diagnósticos para Idaho
+fit_idaho$summary()
+
+# Diagnósticos para Virginia
+fit_virginia$summary()
+
+# Para Idaho, los valores de rhat son 1.000553 y 1.001131, lo cual es muy cercano a 1. Esto sugiere que las cadenas MCMC han convergido bien para el parámetro en cuestión.
+
+# Los valores de ess_bulk y ess_tail son 1770.480 y 1898.027 para la primera fila, y 1658.257 y 1551.814 para la segunda fila, respectivamente. Estos valores son relativamente altos, lo que indica que existe una cantidad sustancial de muestras efectivas para estimar la media y las colas de la distribución posterior. 
+
+# Para Virginia, los valores de rhat son 1.004061 y 1.002552. Estos están ligeramente por encima de 1 pero son todavía aceptables. 
+
+# Los valores de ess_bulk y ess_tail para Virginia son 1605.263 y 1991.545 en la primera fila, y 1373.950 y 1641.210 en la segunda fila, respectivamente. Aunque estos valores son ligeramente más bajos que los de Idaho, todavía son altos y sugieren que tienes una cantidad razonable de muestras efectivas para la estimación.
+
+```
+
+  - Utiliza la media posterior de cada estado como estimador puntual y repite las
+  gráficas del inciso anterior.
+```{r}
+
+```
+
+
+**Nota:** En problemas como este, donde estamos estimando un parámetro para cada 
+grupo (estado e nuestro caso) podemos optar por un modelo jerárquico, en 
+donde la distribución de las $\theta_j$ no esta dada por la incial 
+sino que se modela con un nivel adicional, cuyos parámetros se estiman con los datos
+y tienen a su vez una distribución incial:
+
+
+$$y_j|\theta_j \sim Binomial(n_j, \theta_j)$$
+
+$$\theta_j \sim Beta(\alpha, \beta) $$
+
+$$\alpha \sim g(a_o), \beta \sim f(b_0)$$
+
+donde $g(a_0)$ y $f(b_0)$ son las inciales seleccionadas con conocimiento experto.
