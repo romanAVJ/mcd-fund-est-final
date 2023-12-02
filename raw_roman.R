@@ -196,7 +196,6 @@ se_sigma2_boot <- sd(sigma2_boot)
 hist(sigma2_boot, breaks=20)
 abline(v=sigma2_maxlike, col="red")
 
-
 #### 2.2 bayesian analysis ####
 #### 2.2.1 (prior: inverse gamma)
 # params
@@ -221,22 +220,311 @@ plot(sigmas2, dinv_gamma(taus, alpha=ALPHA, beta=beta), type="l")
 
 
 #### 2.2.2 (analyticaly get the posterior)
-# get posterior
+# get posterior (manually did it)
+
+#### 2.2.3 (simulate from posterior)
+# simulate from posterior
+simulate_sigma2_posterior <- function(x, alpha, beta, seed=8, n_sim=1000){
+  # x is the observed data
+  # alpha is the shape
+  # beta is the scale
+  # seed is the seed for the random number generator
+
+  # update alpha and beta
+  alpha_posterior <- alpha + length(x) / 2
+  beta_posterior <- beta + sum(x^2) / 2
+
+  # simulate from posterior
+  set.seed(seed)
+  sigma2_posterior <- 1 / rgamma(n=n_sim, shape=alpha_posterior, rate=beta_posterior)
+  return(sigma2_posterior)
+}
+
+# simulate
+sigma2_posterior <- simulate_sigma2_posterior(
+  x=x_obs,
+  alpha=ALPHA,
+  beta=beta,
+  seed=8,
+  n_sim=10000
+)
+
+# se
+se_sigma2_posterior <- sd(sigma2_posterior)
 
 
+# graph posterior and add vertical line in claim
+hist(sigma2_posterior, breaks=20)
+abline(v=sigma2_maxlike, col="red")
+
+#### 2.2.4 (compare bootstrap and bayesian)
+# compare distributions
+df_compar <- tibble(
+    sigma2_boot=sigma2_boot,
+    sigma2_posterior=sigma2_posterior
+  ) |>
+  pivot_longer(
+    cols=c(sigma2_boot, sigma2_posterior),
+    names_to="method",
+    values_to="sigma2"
+  ) |>
+  mutate(
+    method=fct_recode(method, "boot"="sigma2_boot", "bayes"="sigma2_posterior")
+  )
+
+# plot densities
+ggplot(df_compar, aes(x=sigma2, fill=method)) +
+  geom_density(alpha=0.5) +
+  theme_minimal()
+
+# plot ecdf
+ggplot(df_compar, aes(x=sigma2, color=method)) +
+  stat_ecdf() +
+  theme_minimal()
+
+# qq plots between bootstrap and bayesian
+x_boot <- df_compar |> filter(method == "boot") |> pull(sigma2) |> sort()
+x_posterior <- df_compar |> filter(method == "bayes") |> pull(sigma2) |> sort()
+qqplot(x_boot, x_posterior)
+# add diagonal
+abline(a=0, b=1, col="red")
+
+#### 2.3 (inference over function of parameters) ####
+#### 2.3.1
+# inference over t = log(sigma)
+# what is the maximum likelihood of t?
+# t_mle = log(sigma2_mle) = log(sd(x_obs))
+t_mle <- log(sqrt(sigma2_maxlike))
+
+# use parametric bootstrap to get the standard error of t_mle
+simulate_t <- function(sigma, n_obs, n_boot, seed=8){
+  # n_obs is the number of observations
+  # n_boot is the number of bootstrap samples
+  # seed is the seed for the random number generator
+
+  # simulate bootstrap
+  set.seed(seed)
+  t_mle_boot <- replicate(
+    n=n_boot,
+    expr=log(sd(rnorm(n_obs, mean=0, sd=sigma)))
+  )
+  return(t_mle_boot)
+}
+# simulate t
+t_sim <- simulate_t(
+  sigma=sqrt(sigma2_maxlike),
+  n_obs=length(x_obs),
+  n_boot=10000,
+  seed=8
+)
+# get 95% confidence interval
+alpha_ci <- 0.05
+t_freq_ci <- quantile(t_sim, probs=c(alpha_ci/2, 1-alpha_ci/2))
+
+# graph t
+hist(t_sim, breaks=20)
+abline(v=t_mle, col="red")
+# add 95% confidence interval
+abline(v=t_freq_ci, col="red", lty=2)
+
+#### 2.3.2
+# bayesian inference over t
+# simulate from posterior
+simulate_t_posterior <- function(x, alpha, beta, seed=8, n_sim=1000){
+  # x is the observed data
+  # alpha is the shape
+  # beta is the scale
+  # seed is the seed for the random number generator
+
+  # update alpha and beta
+  alpha_posterior <- alpha + length(x) / 2
+  beta_posterior <- beta + sum(x^2) / 2
+
+  # simulate from posterior
+  set.seed(seed)
+  sigma2_posterior <- 1 / rgamma(n=n_sim, shape=alpha_posterior, rate=beta_posterior)
+  t_posterior <- log(sqrt(sigma2_posterior))
+  return(t_posterior)
+}
+
+# simulate
+t_posterior <- simulate_t_posterior(
+  x=x_obs,
+  alpha=ALPHA,
+  beta=beta,
+  seed=8,
+  n_sim=10000
+)
+
+# get 95% confidence interval
+alpha_ci <- 0.05
+t_bayes_ci <- quantile(t_posterior, probs=c(alpha_ci/2, 1-alpha_ci/2))
+
+# plot posterior and add vertical line in claim
+hist(t_posterior, breaks=20)
+abline(v=t_mle, col="red")
+# add 95% confidence interval
+abline(v=t_bayes_ci, col="red", lty=2)
+
+#### compare bootstrap and bayesian
+# compare distributions
+df_compar <- tibble(
+    t_boot=t_sim,
+    t_posterior=t_posterior
+  ) |>
+  pivot_longer(
+    cols=c(t_boot, t_posterior),
+    names_to="method",
+    values_to="t"
+  ) |>
+  mutate(
+    method=fct_recode(method, "boot"="t_boot", "bayes"="t_posterior")
+  )
+
+# plot densities
+ggplot(df_compar, aes(x=t, fill=method)) +
+  geom_density(alpha=0.5) +
+  theme_minimal()
+
+# plot ecdf
+ggplot(df_compar, aes(x=t, color=method)) +
+  stat_ecdf() +
+  theme_minimal()
+
+# they look quite similar
+
+# ex 3. bayesian regularization -------------------------------------------
+#### 3.1: eda ####
+# read an dta file
+df_polls <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
+glimpse(df_polls)
+# read election file
+df_elections <- read_csv("data/2008ElectionResult.csv")
+glimpse(df_elections)
+
+#### 3.1.1: proportion of polls very liberal
+## get tables
+# prop as very liberals
+table_polls <- df_polls |>
+  mutate(
+    is_very_liberal = (ideo == "very liberal")
+  ) |>
+  group_by(state) |>
+  summarise(
+    total_vliberal = sum(is_very_liberal, na.rm=TRUE),
+    prop_vliberal = mean(is_very_liberal, na.rm=TRUE),
+    n_polls = sum(!is.na(is_very_liberal))
+  ) |>
+  arrange(state) |>
+  filter(
+    !(state %in% c("alaska", "hawaii", "washington dc")) # remove these states
+  )
+
+# prop of votes for obama
+table_obama <- df_elections |>
+  mutate(state = tolower(state)) |>
+  inner_join(table_polls, by=c("state")) |>
+  select(state, prop_vliberal, vote_Obama_pct)
+table_obama
+
+## plot
+# graph scatter between n_polls and prop_vliberal, add the name of the state
+table_polls |>
+  mutate(state_abr = str_sub(state, 1, 2)) |>
+  ggplot(aes(x=n_polls, y=prop_vliberal)) +
+    geom_point() +
+    geom_text(aes(label=state_abr), hjust=0, vjust=0) +
+    theme_minimal()
 
 
+# graph scatter between prop_vliberal and vote_Obama_pct, add the name of the state
+table_obama |>
+  mutate(state_abr = str_sub(state, 1, 2)) |>
+  ggplot(aes(x=prop_vliberal, y=vote_Obama_pct)) +
+    geom_point() +
+    geom_text(aes(label=state), hjust=0, vjust=0) +
+    theme_minimal()
 
+#### 3.2: bayesian inference ####
+#### 3.2.1 estimate proportion using bayes stats ####
+# params
+A <- 8
+B <- 160
 
+# simulate posterior of a proportion
+simulate_prop_posterior <- function(n_success, n_obs, n_sim=1000, A=2, B=2, seed=8){
+  # n_obs is the number of observations
+  # n_sim is the number of simulations
+  # A is the number of successes
+  # B is the number of failures
+  # seed is the seed for the random number generator
 
+  # update A and B
+  A_posterior <- A + n_success
+  B_posterior <- B + (n_obs - n_success)
 
+  # simulate from posterior
+  set.seed(seed)
+  prop_posterior <- rbeta(n=n_sim, shape1=A_posterior, shape2=B_posterior)
+  return(prop_posterior)
+}
 
+# simulate posterior for each state
+df_obama_posterior <- table_polls |>
+  # simulate and save them in a list and then expand
+  group_by(state) |>
+  mutate(
+    prop_posterior = list(simulate_prop_posterior(
+      n_success=total_vliberal,
+      n_obs=n_polls,
+      n_sim=10000,
+      A=A,
+      B=B,
+      seed=8
+    ))
+  ) |>
+  ungroup() |>
+  select(state, prop_posterior) |>
+  unnest(prop_posterior)
 
+# get mean, std and 95% confidence interval for each state
+table_stats_obama <- df_obama_posterior |>
+  group_by(state) |>
+  summarise(
+    mean = mean(prop_posterior),
+    std = sd(prop_posterior),
+    ci_lower = quantile(prop_posterior, probs=0.025),
+    ci_upper = quantile(prop_posterior, probs=0.975)
+  ) |>
+  arrange(state)
 
+#### graph
+# ploy distribution for each state
+df_obama_posterior |>
+  ggplot(aes(x=prop_posterior)) +
+  geom_histogram(bins=50) +
+  geom_vline(
+    data=table_stats_obama,
+    aes(xintercept=mean),
+    color="red"
+  ) +
+  geom_vline(
+    data=table_stats_obama,
+    aes(xintercept=ci_lower),
+    color="red",
+    linetype="dashed"
+  ) +
+  geom_vline(
+    data=table_stats_obama,
+    aes(xintercept=ci_upper),
+    color="red",
+    linetype="dashed"
+  ) +
+  facet_wrap(~state, ncol=5) +
+  theme_minimal()
 
-
-
-
+#### 3.2.2 use STAN for idaho & virginia ####
+# get data for idaho
 
 
 
