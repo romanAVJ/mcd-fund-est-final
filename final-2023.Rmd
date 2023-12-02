@@ -55,7 +55,7 @@ pval <- pnorm(z_stat) # left tail test
 cat(str_glue("p-value: {round(pval, 4)}"))
 ```
 
-*Conclusión:* (WIP)
+*Conclusión:* En conclusión, los resultados de la muestra obtenida en el condado específico de Illinois, donde se encontró que el 22.3% (69 de 310) de las personas han completado la preparatoria, no proporcionan suficiente evidencia estadística para apoyar la hipótesis del investigador de que el porcentaje de graduados de preparatoria en este condado es menor que el promedio estatal de 26%. Esto se debe a que el valor p calculado de 0.0566 es ligeramente superior al nivel de significancia estándar de 0.05. Por lo tanto, no se puede rechazar la hipótesis nula de que no hay diferencia significativa entre el porcentaje del condado y el porcentaje estatal. Sin embargo, dado que el valor p está muy cerca del umbral de significancia, sugiere que podría haber una tendencia hacia un porcentaje menor en el condado, pero esta tendencia no alcanza el nivel de significancia estadística convencional.
 
 ## 1.2 Mendel
 1.2 Mendel criaba chícharos de semillas lisas amarillas y de semillas
@@ -89,10 +89,70 @@ pval <- pchisq(chi_stat, df = 3, lower.tail = FALSE)
 cat(str_glue("p-value: {round(pval, 4)}"))
 ```
 
-(WIP): add simulation and compare it with the theoretical p-value
+
+```{r}
+# Con simul<ción 
+p_0 <- c(9/16, 3/16, 3/16, 1/16)  
+x <- c(315, 101, 108, 32)       
+n <- sum(x)                       
+
+# Log-verosimilitud bajo H0 usando dmultinom
+ll_H0 <- dmultinom(x, size = n, prob = p_0, log = TRUE)
+
+# Estimación MLE de las probabilidades para H1
+p_hat <- x / n  
+
+# Log-verosimilitud bajo H1 usando dmultinom con las probabilidades estimadas
+ll_H1 <- dmultinom(x, size = n, prob = p_hat, log = TRUE)
+
+# Cálculo del estadístico lambda
+lambda <- 2 * (ll_H1 - ll_H0)
+
+### Simulación bajo H0: 
+
+lambda_multinomial <- function(x, p_0) {
+  p_mv <- x / sum(x)
+  log_p_mv <- sum(dmultinom(x, prob = p_mv, log = TRUE))
+  log_p_nula <- sum(dmultinom(x, prob = p_0, log = TRUE))
+  lambda <- 2 * (log_p_mv - log_p_nula)
+  return(lambda)
+}
+
+# Valor observado
+x_obs <- c(315, 101, 108, 32)
+lambda_obs <- lambda_multinomial(x_obs, p_0)
+
+# Simulación bajo la hipótesis nula
+num_simulaciones <- 10000
+simulados_nula <- replicate(num_simulaciones, rmultinom(1, n, p_0), simplify = "array")
+
+# Ajustar las dimensiones y convertir en matriz
+simulados_nula <- aperm(simulados_nula, c(2, 1, 3))
+simulados_nula <- matrix(simulados_nula[1, , ], ncol = length(p_0), byrow = TRUE)
+
+# Calcular lambda para cada simulación
+lambda_vals <- apply(simulados_nula, 1, function(sim_data) {
+  lambda_multinomial(as.integer(sim_data), p_0)
+})
+
+# Crear un data frame para el gráfico
+sims_tbl <- tibble(lambda = lambda_vals)
+
+# Gráfico de las simulaciones
+g1 <- ggplot(sims_tbl, aes(x = lambda)) + 
+  geom_histogram(binwidth = 0.7) +
+  geom_vline(xintercept = lambda_obs, color = "red")
+
+# Calcular el p-valor
+p_valor <- mean(sims_tbl$lambda >= lambda_obs)
+p_valor
+
+```
 
 
-*Conclusión:* (WIP)
+*Conclusión:* Los resultados obtenidos muestran un p-valor aproximado de 0.925, tanto en el cálculo teórico (0.9243) como en la simulación (0.9251). Este valor p alto sugiere que no existe evidencia estadística suficiente para rechazar la hipótesis nula. En consecuencia, se concluye que las proporciones observadas en los experimentos de Mendel no presentan diferencias significativas respecto a las proporciones teóricas propuestas por él. Esto refuerza la validez de la teoría de Mendel sobre la herencia genética, basada en los datos analizados.
+
+
 
 ## 1.3 Poisson & Wald Test
 
@@ -152,7 +212,12 @@ cat(str_glue("rejected times: {100 * mean(pval_wald_poiss < ALPHA)}%"))
 
 ```
 
-*Conclusión:* (WIP)
+*Conclusión:* En la prueba de Wald para evaluar la hipótesis nula H0: lamda = lambda0 vs H1: lambda != lambda0, con lambda0 = 1, un tamaño de muestra de 20 y un nivel de significancia de 0.05, se realizó una simulación 1000 veces siguiendo una distribución Poisson.
+
+En estas simulaciones, la hipótesis nula fue rechazada aproximadamente en el 4.9% de los casos. Este resultado está muy cerca del nivel de significancia del 5%, lo que indica que la prueba de Wald está funcionando de manera adecuada bajo las condiciones establecidas. Un porcentaje de rechazo cercano al 5% en la simulación sugiere que el error de tipo 1, es decir, la probabilidad de rechazar incorrectamente la hipótesis nula cuando es verdadera, está bien controlado y coincide con el nivel de significancia propuesto. Por lo tanto, los resultados de la simulación respaldan la exactitud y fiabilidad de la prueba de Wald en este contexto específico.
+
+
+
 
 
 # 2. Relación entre bootstrap e inferencia bayesiana
@@ -691,7 +756,7 @@ knitr::kable(
 
 ```
 
-this chunk must have a bigger plot
+
 ```{r fig.width=10, fig.height=10}
 # plot distribution for each state
 df_obama_posterior |>
@@ -726,8 +791,17 @@ df_obama_posterior |>
   **IDAHO**
   
 ```{r}
-model_stan <- file.path("stan", "beta_binomial_model.stan") |> cmdstanr::cmdstan_model()
-model_stan
+
+install.packages('cmdstanr', repos = c('https://mc-stan.org/r-packages/', getOption('repos')))
+library(cmdstanr)
+library(posterior)
+# Instalar CmdStan usando cmdstanr
+cmdstanr::install_cmdstan()
+
+
+# Compilar el modelo Stan
+model <- cmdstan_model("stan/beta_binomial_model.stan")
+
 ```
 
 
@@ -738,7 +812,7 @@ data_idaho <- table_polls |>
 data_idaho
 
 # fit model
-fit_stan <- model_stan$sample(
+fit_stan <- model$sample(
   data = list(
     n = data_idaho$n_polls,
     y = data_idaho$total_vliberal
@@ -768,7 +842,9 @@ fit_stan$draws(c("theta", "prior_theta")) |>
 
 ```
 
-*Conclusiones (WIP)*
+*Conclusiones* Para Idaho, los valores de R-hat presentados son 1.000182, 1.000260 y 1.000099, todos muy cercanos al valor óptimo de 1, lo cual indica una excelente convergencia de las cadenas MCMC. Esto sugiere que las estimaciones de los parámetros son estables y confiables.
+
+En cuanto a los valores de ess_bulk y ess_tail, también son notablemente altos para todas las estimaciones: 36959.35 y 40861.68 para la primera, 28152.81 y 34713.97 para la segunda, y 79905.39 y 78459.93 para la tercera. Estos valores indican una cantidad significativa de muestras efectivas que contribuyen a la estimación de la media y las colas de la distribución posterior, proporcionando una base sólida para las inferencias estadísticas. La alta magnitud de estos valores refleja que hay suficiente información en las muestras para obtener estimaciones precisas y que las conclusiones derivadas de estos datos son robustas y fiables para Idaho.
 
 
 **VIRGINIA**
@@ -780,7 +856,7 @@ data_virginia <- table_polls |>
 data_virginia
 
 # fit model
-fit_stan <- model_stan$sample(
+fit_stan <- model$sample(
   data = list(
     n = data_virginia$n_polls,
     y = data_virginia$total_vliberal
@@ -809,7 +885,12 @@ fit_stan$draws(c("theta", "prior_theta")) |>
   geom_line(alpha = 0.5)
 ```
 
-*Conclusiones (WIP)*
+*Conclusiones* Para Virginia, los valores de R-hat son 1.000110, 1.000185 y 1.000127 para las tres estimaciones respectivamente. Estos valores están extremadamente cerca de 1, lo cual es ideal, indicando que las cadenas MCMC han convergido muy bien y que las estimaciones de los parámetros son confiables.
+
+Los valores de ess_bulk y ess_tail son excepcionalmente altos en todos los casos, con 35570.52 y 39194.73 para la primera estimación, 27839.46 y 34102.24 para la segunda, y 78778.66 y 78495.77 para la tercera. Tales valores altos para ess_bulk y ess_tail sugieren que hay una gran cantidad de muestras efectivas que contribuyen a la estimación de la media y la cola de la distribución posterior. Esto refleja una precisión estadística muy alta para las estimaciones realizadas, lo que significa que los resultados son robustos y las inferencias basadas en estas muestras son muy fiables para Virginia.
+
+
+
 
   - Utiliza la media posterior de cada estado como estimador puntual y repite las
   gráficas del inciso anterior.
