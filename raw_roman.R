@@ -4,7 +4,6 @@
 ###############################################################################
 library(tidyverse)
 
-
 # ex. 1 -------------------------------------------------------------------
 #### 1.1 (us proportion) ####
 # params
@@ -164,7 +163,7 @@ sigma2_maxlike <- optim(
 
 # plot log likelihood
 sigma2 <- seq(1, 200, 1)
-plot(sigma, loglike_xobs(sigma2), type="l")
+plot(sigma2, loglike_xobs(sigma2), type="l")
 # ad vline in max likelihood
 abline(v=sigma2_maxlike, col="red")
 # comment: my the graph, it seems that the maximum likelihood is not very
@@ -524,19 +523,109 @@ df_obama_posterior |>
   theme_minimal()
 
 #### 3.2.2 use STAN for idaho & virginia ####
-# get data for idaho
+# get stan model
+model_stan <- file.path("stan_roman", "beta_binomial_model.stan") |> cmdstanr::cmdstan_model()
+model_stan
+
+## get data for idaho
+data_idaho <- table_polls |>
+  filter(state == 'idaho')
+data_idaho
+
+# fit model
+fit_stan <- model_stan$sample(
+  data = list(
+    n = data_idaho$n_polls,
+    y = data_idaho$total_vliberal
+  ),
+  chains = 8,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 10000,
+  refresh = 500,
+  seed = 8
+)
+
+# diagnose
+fit_stan$cmdstan_diagnose()
+fit_stan$summary()
+fit_stan$draws(c("theta", "prior_theta")) |> 
+  posterior::as_draws_df() |> 
+  ggplot(aes(.iteration, theta)) +
+  geom_line() +
+  facet_wrap(~.chain, ncol = 1)
+
+fit_stan$draws(c("theta", "prior_theta")) |> 
+  posterior::as_draws_df() |> 
+  mutate(.chain = factor(.chain)) |>
+  ggplot(aes(.iteration, theta, color = .chain)) +
+  geom_line(alpha = 0.5)
+
+## get data from virginia
+data_virginia <- table_polls |>
+  filter(state == 'virginia')
+data_virginia
+
+# fit model
+fit_stan <- model_stan$sample(
+  data = list(
+    n = data_virginia$n_polls,
+    y = data_virginia$total_vliberal
+  ),
+  chains = 8,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 10000,
+  refresh = 500,
+  seed = 8
+)
+
+# diagnose
+fit_stan$cmdstan_diagnose()
+fit_stan$summary()
+fit_stan$draws(c("theta", "prior_theta")) |>
+  posterior::as_draws_df() |> 
+  ggplot(aes(.iteration, theta)) +
+  geom_line() +
+  facet_wrap(~.chain, ncol = 1)
+
+fit_stan$draws(c("theta", "prior_theta")) |>
+  posterior::as_draws_df() |> 
+  mutate(.chain = factor(.chain)) |>
+  ggplot(aes(.iteration, theta, color = .chain)) +
+  geom_line(alpha = 0.5)
 
 
+#### 3.2.3 repeate 3.2.1 with point estimate ####
+# join data
+table_obama_posterior  <- table_polls |>
+  inner_join(table_stats_obama, by = c("state")) |>
+  mutate(
+    prop_vliberal = mean
+  ) 
 
+## plot
+# graph scatter between n_polls and prop_vliberal, using the point estimate from table_stats_obama
+table_obama_posterior |> 
+  mutate(method = "bayesian") |> 
+  select(state, total_vliberal, prop_vliberal, n_polls, method) |>
+  add_row(
+    table_polls |> mutate(method = "frequentist") |> select(state, total_vliberal, prop_vliberal, n_polls, method)
+  ) |> 
+  mutate(state_abr = str_sub(state, 1, 2)) |>
+  ggplot(aes(x=n_polls, y=prop_vliberal, color=method)) +
+  geom_point() +
+  geom_text(aes(label=state_abr), hjust=0, vjust=0) +
+  theme_minimal()
+# note: the proportion looks more controlled with the bayesian method
 
-
-
-
-
-
-
-
-
-
-
-
+# graph scatter between prop_vliberal and vote_Obama_pct, using the point estimate from table_stats_obama
+df_elections |>
+  mutate(state = tolower(state)) |>
+  inner_join(table_obama_posterior, by=c("state")) |>
+  select(state, prop_vliberal, vote_Obama_pct) |>
+  mutate(state_abr = str_sub(state, 1, 2)) |>
+  ggplot(aes(x=prop_vliberal, y=vote_Obama_pct)) +
+    geom_point() +
+    geom_text(aes(label=state), hjust=0, vjust=0) +
+    theme_minimal()
